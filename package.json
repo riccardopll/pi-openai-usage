@@ -1,0 +1,42 @@
+{
+  "name": "@riccardopll/pi-openai-usage",
+  "version": "0.1.0",
+  "description": "Pi extension that shows OpenAI Codex weekly usage.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Riccardo Palleschi",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/riccardopll/pi-openai-usage.git"
+  },
+  "homepage": "https://github.com/riccardopll/pi-openai-usage#readme",
+  "bugs": "https://github.com/riccardopll/pi-openai-usage/issues",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "openai",
+    "codex",
+    "usage"
+  ],
+  "files": [
+    "extensions"
+  ],
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.10",
+    "typescript": "^7.0.2"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/openai-usage.ts"
+    ]
+  }
+}
