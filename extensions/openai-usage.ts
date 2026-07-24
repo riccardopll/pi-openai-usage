@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { CancellableLoader } from "@earendil-works/pi-tui";
 
 const PROVIDER = "openai-codex";
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
@@ -42,17 +43,17 @@ function getWeeklyWindow(payload: UsageResponse) {
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("usage", {
-    description: "Show OpenAI Codex weekly usage",
+    description: "Show OpenAI weekly usage",
     handler: async (_args, ctx) => {
-      try {
+      const fetchUsage = async (signal: AbortSignal) => {
         const model = ctx.modelRegistry
           .getAll()
           .find((candidate) => candidate.provider === PROVIDER);
-        if (!model) throw new Error("OpenAI Codex is not available in this Pi installation.");
+        if (!model) throw new Error("OpenAI is not available in this Pi installation.");
 
         const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
         if (!auth.ok || !auth.apiKey) {
-          throw new Error("OpenAI Codex is not logged in. Run /login and select OpenAI.");
+          throw new Error("OpenAI is not logged in. Run /login and select OpenAI.");
         }
 
         const accountId = getAccountId(auth.apiKey);
@@ -65,20 +66,57 @@ export default function (pi: ExtensionAPI) {
             Authorization: `Bearer ${auth.apiKey}`,
             "ChatGPT-Account-Id": accountId,
           },
-          signal: AbortSignal.timeout(10_000),
+          signal,
         });
         if (!response.ok) throw new Error(`OpenAI usage request failed (${response.status}).`);
 
         const weekly = getWeeklyWindow((await response.json()) as UsageResponse);
         if (!weekly) throw new Error("OpenAI did not return a weekly usage window.");
+        return weekly;
+      };
+
+      try {
+        let weekly: UsageWindow;
+
+        if (ctx.mode === "tui") {
+          const result = await ctx.ui.custom<UsageWindow | Error | null>(
+            (tui, theme, _keybindings, done) => {
+              const loader = new CancellableLoader(
+                tui,
+                (text) => theme.fg("accent", text),
+                (text) => theme.fg("muted", text),
+                "Fetching usage...",
+              );
+              loader.setIndicator({ frames: ["|", "/", "-", "\\"], intervalMs: 100 });
+              loader.onAbort = () => done(null);
+
+              void fetchUsage(AbortSignal.any([loader.signal, AbortSignal.timeout(10_000)])).then(
+                done,
+                (error: unknown) => {
+                  if (!loader.signal.aborted) {
+                    done(error instanceof Error ? error : new Error(String(error)));
+                  }
+                },
+              );
+
+              return loader;
+            },
+          );
+
+          if (result === null) {
+            ctx.ui.notify("Cancelled", "info");
+            return;
+          }
+          if (result instanceof Error) throw result;
+          weekly = result;
+        } else {
+          weekly = await fetchUsage(AbortSignal.timeout(10_000));
+        }
 
         const used = Math.round(weekly.used_percent);
         const remaining = Math.max(0, 100 - used);
         const reset = new Date(weekly.reset_at * 1000).toLocaleString();
-        ctx.ui.notify(
-          `OpenAI weekly: ${used}% used · ${remaining}% remaining · resets ${reset}`,
-          "info",
-        );
+        ctx.ui.notify(`Weekly: ${used}% used · ${remaining}% remaining · resets ${reset}`, "info");
       } catch (error) {
         ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
       }
